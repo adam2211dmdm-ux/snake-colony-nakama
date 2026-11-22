@@ -56,10 +56,18 @@ wait_db_ready() {
 
 start_cockroach() {
   log "== CockroachDB (single node, low memory: cache 64MiB, GOMEMLIMIT 192MiB) =="
+  # Railway trial volume is only 500 MB. CockroachDB's emergency ballast
+  # defaults to 1% of disk or 1 GiB, and if free space <= half the ballast
+  # it exits at startup with "out of disk space" (exit 10) — that is what
+  # crash-looped the Railway deploy. Pin the ballast to 10 MiB and cap
+  # temp spill, and delete any oversized ballast left by an earlier boot
+  # (docs: removing EMERGENCY_BALLAST is the supported recovery; with the
+  # small ballast-size below it is recreated at 10 MiB if at all).
+  rm -f "${COCKROACH_STORE}/auxiliary/EMERGENCY_BALLAST"
   GOMEMLIMIT=192MiB cockroach start-single-node --insecure \
-    --store="${COCKROACH_STORE}" \
+    --store="path=${COCKROACH_STORE},ballast-size=10MiB" \
     --listen-addr="localhost:${DB_PORT}" --http-addr="localhost:${HTTP_PORT}" \
-    --cache=64MiB --max-sql-memory=64MiB \
+    --cache=64MiB --max-sql-memory=64MiB --max-disk-temp-storage=50MiB \
     --background=false &
   CR_PID=$!
   log "CockroachDB started (pid ${CR_PID})"
